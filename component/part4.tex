@@ -1,0 +1,457 @@
+\section{Part 4: Training the Final Nanochat Model}
+
+\subsection{Motivation}
+
+The picochat ablation experiments in Part~2 compared several architectural
+modifications, including SwiGLU and LayerScale. Although the baseline
+architecture achieved the best results at the pico scale, architectural
+changes often behave differently as model capacity increases.
+
+Recent large language models such as PaLM and LLaMA adopt gated MLP
+variants (e.g., SwiGLU), suggesting that such modifications may become
+beneficial at larger scales. Therefore, in addition to the baseline
+configuration, we trained a larger nanochat model incorporating SwiGLU
+to examine whether its advantages emerge under increased model capacity.
+
+\subsection{Model Configuration}
+
+The final nanochat models were trained using the configuration shown in
+Table~\ref{tab:nano_config}. Compared to picochat, the nanochat model
+increases network depth and effective batch size, enabling training on
+a substantially larger token budget.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Model Depth & 20 layers \\
+Sequence Length & 512 \\
+Training Iterations & 4357 \\
+Device Batch Size & 32 \\
+Total Batch Size & 1,048,576 \\
+GPU Type & H100 \\
+Precision & FP8 (tensorwise) \\
+Window Pattern & L \\
+\hline
+\end{tabular}
+\caption{Nanochat training configuration.}
+\label{tab:nano_config}
+\end{table}
+
+Training was performed on the full pretraining dataset using
+the nanochat training framework.
+
+Two models were trained:
+
+\begin{itemize}
+\item \textbf{Nanochat Baseline}: standard ReLU$^2$ MLP.
+\item \textbf{Nanochat SwiGLU}: identical architecture with a SwiGLU MLP block.
+\end{itemize}
+
+\subsection{Training Procedure}
+
+Training was conducted on H100 GPUs via Modal using FP8 tensorwise
+precision to improve throughput and memory efficiency. Training progress
+was monitored using Weights \& Biases.
+
+Both models exhibited nearly identical loss trajectories throughout
+training, indicating similar optimization behavior. However, the SwiGLU
+model showed lower token throughput due to the additional gating
+operations within the MLP block.
+
+\subsection{Scaling Prediction}
+
+Before training the nanochat models, we estimate how performance should
+change when scaling from picochat (6 layers) to nanochat (20 layers).
+
+The picochat baseline achieved:
+
+\begin{itemize}
+\item BPB: 1.0575
+\item CORE: 0.0615
+\end{itemize}
+
+Increasing model capacity and training compute should significantly
+improve language modeling performance. We therefore predict that the
+nanochat model will achieve substantially lower BPB and higher CORE
+scores than picochat.
+
+After training, the results confirm this prediction. The nanochat
+baseline achieves:
+
+\begin{itemize}
+\item Validation BPB: 0.7822
+\item CORE score: 0.2038
+\end{itemize}
+
+This corresponds to roughly a \textbf{26\% reduction in BPB} and more
+than a \textbf{threefold increase in CORE}. The improvement is far larger
+than the differences between architectural variants, indicating that
+model scale is the dominant factor affecting performance.
+
+\subsection{Evaluation}
+
+Following the evaluation protocol in the original nanochat repository,
+models are evaluated using two metrics:
+
+\begin{itemize}
+\item \textbf{Bits-per-byte (BPB)}, measuring next-token prediction quality.
+\item \textbf{CORE benchmark score}, aggregating performance across
+22 reasoning and language understanding tasks.
+\end{itemize}
+
+\subsubsection{Aggregate Results}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\hline
+\textbf{Model} & \textbf{Train BPB $\downarrow$} & \textbf{Val BPB $\downarrow$} & \textbf{CORE $\uparrow$} \\
+\hline
+Nanochat Baseline & \textbf{0.782469} & \textbf{0.782195} & 0.2038 \\
+Nanochat SwiGLU & 0.786032 & 0.785764 & \textbf{0.2086} \\
+\hline
+\end{tabular}
+\caption{Aggregate nanochat results.}
+\label{tab:part4_aggregate_results}
+\end{table}
+
+The baseline model achieves the lowest BPB, indicating stronger
+token-level language modeling. In contrast, the SwiGLU model achieves a
+slightly higher CORE score.
+
+This suggests a small trade-off: SwiGLU does not improve token-level
+prediction efficiency but may produce representations that benefit
+certain reasoning tasks.
+
+\subsubsection{CORE Benchmark Analysis}
+
+Figure~\ref{fig:part4_core_bar} shows the aggregate CORE scores.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\linewidth]{p4/Screenshot 2026-03-06 113232.png}
+\caption{Aggregate CORE scores.}
+\label{fig:part4_core_bar}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{p4/Screenshot 2026-03-06 121848.png}
+\caption{Per-task CORE benchmark scores for the baseline and SwiGLU nanochat models.}
+\label{fig:part4_core_tasks}
+\end{figure}
+
+Task-level results are shown in Table~\ref{tab:part4_task_level_results}.
+
+\begin{table}[p]
+\centering
+\small
+\begin{tabular}{lcc}
+\hline
+\textbf{Benchmark} & \textbf{Baseline} & \textbf{SwiGLU} \\
+\hline
+agi\_eval\_lsat\_ar & 0.2348 & \textbf{0.2565} \\
+arc\_challenge & \textbf{0.3584} & 0.3456 \\
+arc\_easy & 0.6599 & 0.6599 \\
+bigbench\_cs\_algorithms & 0.3841 & \textbf{0.4008} \\
+bigbench\_dyck\_languages & \textbf{0.1260} & 0.0990 \\
+bigbench\_language\_identification & \textbf{0.2520} & 0.2510 \\
+bigbench\_operators & \textbf{0.1667} & 0.1619 \\
+bigbench\_qa\_wikidata & 0.4816 & \textbf{0.4818} \\
+bigbench\_repeat\_copy\_logic & \textbf{0.0312} & 0.0000 \\
+boolq & \textbf{0.6043} & 0.5914 \\
+commonsense\_qa & 0.2260 & \textbf{0.3522} \\
+copa & 0.6200 & \textbf{0.6900} \\
+coqa & \textbf{0.2068} & 0.2026 \\
+hellaswag & \textbf{0.4409} & 0.4359 \\
+hellaswag\_zeroshot & \textbf{0.4573} & 0.4489 \\
+jeopardy & 0.0586 & \textbf{0.0709} \\
+lambada\_openai & \textbf{0.3868} & 0.3842 \\
+openbook\_qa & \textbf{0.3600} & 0.3420 \\
+piqa & 0.6763 & \textbf{0.6823} \\
+squad & 0.0219 & \textbf{0.0799} \\
+winograd & \textbf{0.6667} & 0.6154 \\
+winogrande & \textbf{0.5564} & 0.5304 \\
+\hline
+\end{tabular}
+\caption{Task-level CORE benchmark results.}
+\label{tab:part4_task_level_results}
+\end{table}
+
+The baseline performs slightly better on tasks resembling language
+modeling and narrative completion (e.g., HellaSwag, BoolQ). In contrast,
+SwiGLU improves several reasoning-oriented tasks such as
+\texttt{commonsense\_qa}, \texttt{copa}, and \texttt{squad}. This suggests
+that gated MLP layers may influence internal representations used in
+reasoning tasks.
+
+\subsubsection{Training Dynamics}
+
+\begin{figure}[H]
+\centering
+
+\begin{minipage}{0.9\linewidth}
+\centering
+\includegraphics[width=\linewidth]{p4/W&B Chart 3_6_2026, 11_33_18 AM.png}
+\subcaption{Training Loss}
+\end{minipage}
+
+\vspace{0.6em}
+
+\begin{minipage}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{p4/W&B Chart 3_6_2026, 11_51_35 AM.png}
+\subcaption{Training Time}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{p4/W&B Chart 3_6_2026, 11_51_43 AM.png}
+\subcaption{Token Throughput}
+\end{minipage}
+
+\caption{Training dynamics comparison between nanochat models.}
+\label{fig:training_dynamics}
+
+\end{figure}
+
+Both models exhibit nearly identical loss curves, indicating similar
+optimization behavior. However, the baseline maintains higher token
+throughput ($\sim160$k tokens/sec) compared to the SwiGLU model
+($\sim130$k tokens/sec), resulting in shorter training time.
+
+This difference is also reflected in compute cost. The baseline training
+required approximately \$33.80 in Modal compute credits, while the
+SwiGLU experiment required \$44.12.
+
+\subsubsection{Comparison with Picochat}
+
+At the pico scale, the baseline architecture outperformed all variants
+under both BPB and CORE:
+
+\begin{itemize}
+\item Pico baseline: BPB 1.0575, CORE 0.0615
+\item Pico SwiGLU: BPB 1.0589, CORE 0.0554
+\end{itemize}
+
+At the nano scale, the baseline still achieves better BPB but SwiGLU
+slightly surpasses it in CORE. This demonstrates that architectural
+effects can change with model scale. While the modification does not
+dominate overall, it becomes more competitive as model capacity
+increases.
+
+\subsection{Emergent Abilities}
+
+Emergent abilities refer to capabilities that appear in larger models
+but are absent or unreliable in smaller ones. To investigate this
+phenomenon, we tested both picochat and nanochat models on a set of
+diagnostic questions covering factual knowledge, scientific explanation,
+and logical reasoning.
+
+We selected questions where nanochat produced meaningful answers while
+picochat failed or generated nonsensical output. See Table~\ref{tab:emergent_questions} for the list of questions.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{0.95\linewidth}}
+\hline
+\textbf{Emergent Ability Questions} \\
+\hline
+1. What is the capital city of Australia? \\
+2. Which country has the city of Barcelona? \\
+3. Who wrote the novel \textit{1984}? \\
+4. What is the largest ocean on Earth? \\
+5. What gas do humans breathe in that plants produce during photosynthesis? \\
+6. Why does the sky appear blue during the day? \\
+7. Why do objects fall toward the ground on Earth? \\
+8. What part of a plant performs photosynthesis? \\
+9. What happens to water when it freezes? \\
+10. If all cats are animals and all animals breathe air, do cats breathe air? \\
+\hline
+\end{tabular}
+\caption{Questions demonstrating emergent abilities when scaling from
+picochat to nanochat.}
+\label{tab:emergent_questions}
+\end{table}
+
+
+The picochat model frequently produced incoherent or repetitive
+responses. In contrast, both nanochat models correctly answered several
+questions, identifying facts such as \textit{Canberra} as Australia's
+capital and \textit{oxygen} as the gas produced during photosynthesis.
+
+Between the two nanochat variants, qualitative differences were small.
+The baseline model tended to produce longer explanations, whereas the
+SwiGLU model often produced shorter and more direct answers.
+
+Overall, these examples illustrate that scaling from picochat to
+nanochat enables the model to retrieve factual knowledge and generate
+basic explanations that are largely absent in the smaller model.
+
+\subsection{Discussion}
+
+Overall, three conclusions emerge from the experiments.
+
+First, scaling the model from picochat to nanochat substantially improves
+language modeling quality and benchmark performance.
+
+Second, the SwiGLU architecture slightly improves several reasoning
+benchmarks but does not outperform the baseline in BPB and incurs
+additional computational cost.
+
+Third, architectural modifications can behave differently at different
+scales, highlighting the importance of empirical evaluation when
+designing transformer architectures.
+
+\subsection{Codebase Organization}
+
+This project consists of two main codebases: the modified \texttt{nanochat}
+training framework used for model development and evaluation, and the
+\texttt{AI-Accountant} repository that organizes the experimental workflow
+for Assignment~3. The following section summarizes the key modifications and
+directory structure used to support the experiments.
+
+\subsubsection{Nanochat Modifications}
+
+The nanochat framework was extended to support architectural ablations and
+more robust evaluation. Compared to the original upstream repository, three
+files were modified.
+
+\begin{itemize}
+
+\item \textbf{\texttt{nanochat/gpt.py}} \\
+This file contains the core transformer architecture implementation.
+Several extensions were introduced to support the architectural ablations
+explored in this assignment. Specifically, the model now supports multiple
+MLP variants (\texttt{relu2} and \texttt{swiglu}), optional residual
+scaling through a LayerScale variant, and a configurable
+\texttt{layerscale\_init} parameter controlling residual scaling strength.
+Additionally, dynamic rotary embedding cache growth was implemented through
+the \texttt{\_ensure\_rotary\_cache} function to allow evaluation with longer
+sequence lengths than those used during training.
+
+\item \textbf{\texttt{scripts/base\_train.py}} \\
+The training entrypoint was modified to expose the new architectural
+configuration options through the command-line interface and configuration
+files. This allows experiments to select between the baseline ReLU$^2$ MLP,
+SwiGLU MLP, and residual variants directly through experiment YAML files
+without modifying the model implementation.
+
+\item \textbf{\texttt{scripts/base\_eval.py}} \\
+The evaluation pipeline was extended to support resumable CORE benchmark
+evaluation. Progress files are written under a \texttt{base\_eval\_progress}
+directory, enabling interrupted evaluation runs to resume without repeating
+completed tasks. Additional features include task-level progress tracking,
+support for \texttt{max-per-task} evaluation limits, and progress-path
+reporting in logs for easier monitoring of long-running benchmark jobs.
+
+\end{itemize}
+
+These modifications enable flexible experimentation with architectural
+variants while ensuring that long-running evaluation jobs can be resumed
+safely.
+
+\subsubsection{Assignment Repository Structure}
+
+The experimental workflow for Assignment~3 is organized in the
+\texttt{AI-Accountant} repository under the \texttt{a3} directory. The
+structure follows the assignment's four-part layout.
+
+\paragraph{Part 1: Infrastructure and Orchestration}
+
+The infrastructure and orchestration layer is implemented under
+\texttt{a3/shared}. This directory contains reusable pipeline components
+used by all experiments.
+
+Key files include:
+
+\begin{itemize}
+
+\item \textbf{\texttt{scripts/main.py}} \\
+Primary local entrypoint for running experiments from YAML configuration
+files.
+
+\item \textbf{\texttt{scripts/runners/run.py}} \\
+Orchestrates the full training and evaluation pipeline by coordinating
+individual stages.
+
+\item \textbf{\texttt{scripts/runners/train.py}} \\
+Implements the training worker responsible for launching model training
+jobs.
+
+\item \textbf{\texttt{scripts/runners/evaluate.py}} \\
+Handles evaluation runs, including CORE benchmark execution.
+
+\item \textbf{\texttt{scripts/shared/infra.py}} \\
+Defines the Modal infrastructure configuration, including container
+images, persistent volumes, and secret management.
+
+\item \textbf{\texttt{scripts/shared/helpers.py}} \\
+Provides helper utilities for parsing configuration files and managing
+pipeline stages.
+
+\end{itemize}
+
+The \texttt{a3/docs} directory contains supporting documentation for the
+infrastructure design, including interface definitions and experiment
+workflow descriptions.
+
+\paragraph{Part 2: Picochat Ablation Experiments}
+
+All pico-scale ablation experiments are defined in
+\texttt{a3/p2/configs}. These configuration files specify experiment
+variants including:
+
+\begin{itemize}
+\item baseline architecture
+\item SwiGLU MLP variant
+\item LayerScale residual variant
+\item combined architectural modifications
+\item smoke-test and evaluation-only configurations
+\end{itemize}
+
+The file \texttt{training-troubleshooting.md} documents issues encountered
+during early training runs and the steps taken to resume interrupted
+experiments.
+
+\paragraph{Part 3: Analysis Structure}
+
+The \texttt{a3/p3} directory provides the structure for analysis artifacts,
+including placeholders for evaluation results, documentation, and
+experiment outputs. While this directory contains minimal code, it
+establishes the standardized layout used for subsequent parts of the
+assignment.
+
+\paragraph{Part 4: Nanochat Experiments}
+
+The final nanochat experiments are organized under \texttt{a3/p4}.
+
+\begin{itemize}
+
+\item \textbf{\texttt{configs}} \\
+Contains YAML configurations for full nanochat training runs, evaluation-only
+jobs, hyperparameter sweeps, and smoke-test pipelines.
+
+\item \textbf{\texttt{results}} \\
+Stores downloaded evaluation artifacts including BPB measurements,
+CORE benchmark outputs, and aggregated CSV/JSON summaries used in the
+analysis.
+
+\item \textbf{\texttt{scripts/compare\_emergent\_abilities.py}} \\
+A diagnostic script that generates side-by-side responses from picochat
+and nanochat models to compare qualitative reasoning abilities.
+
+\item \textbf{\texttt{emergent\_abilities\_results.txt}} \\
+A generated file containing the qualitative comparison outputs used in
+the emergent ability analysis in Part~4.
+
+\end{itemize}
+
+Overall, this structure separates reusable infrastructure code, experiment
+configuration files, and analysis artifacts. This organization improves
+reproducibility and makes it easier to track experimental results across
+different parts of the assignment.
