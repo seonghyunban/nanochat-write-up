@@ -27,6 +27,8 @@
 
 \usepackage{forest}
 \usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, fit, backgrounds, calc}
 
 \hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
 \setlength{\parindent}{0pt}
@@ -51,7 +53,7 @@
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
 
 % Document info
-\title{CSC490 Assignment A2 - Pipelines, Data and Infrastructure}
+\title{CSC490 Assignment A3 - Pre-training Nanochat}
 \author{
     Chris Jiang (Student ID: 1008109574) |
     Yihe Li (Student ID: 1009802331) \\
@@ -63,6 +65,8 @@
 \begin{document}
 
 \maketitle
+
+We include a supplementary appendix (Appendix~\ref{sec:appendix-pipeline}) explaining our infrastructure choices and how the training pipeline works at a high level. We recommend reading it before looking into the codebase.
 
 % Part 1: Interest Statements
 \input{component/part1}
@@ -77,5 +81,8 @@
 \input{component/part4}
 
 \input{component/part5}
+
+% Appendix: Infrastructure and Pipeline
+\input{component/appendix_pipeline}
 
 \end{document}
