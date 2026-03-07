@@ -27,8 +27,6 @@
 
 \usepackage{forest}
 \usepackage{fancyhdr}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta, positioning, fit, backgrounds, calc}
 
 \hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
 \setlength{\parindent}{0pt}
@@ -51,6 +49,7 @@
 % Title formatting
 \titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+\setcounter{tocdepth}{2}
 
 % Document info
 \title{CSC490 Assignment A3 - Pre-training Nanochat}
@@ -66,21 +65,26 @@
 
 \maketitle
 
-We include a supplementary appendix (Appendix~\ref{sec:appendix-pipeline}) explaining our infrastructure choices and how the training pipeline works at a high level. We recommend reading it before looking into the codebase.
+\input{component/intro}
 
+\newpage
 % Part 1: Interest Statements
 \input{component/part1}
 
+\newpage
 % Part 2: Landscape Analysis
 \input{component/part2}
 
+\newpage
 % Part 3: Project Outline
 \input{component/part3}
 
+\newpage
 % Part 4: Press Release
 \input{component/part4}
 
-\input{component/part5}
+% \newpage
+% \input{component/part5}
 
 % Appendix: Infrastructure and Pipeline
 \input{component/appendix_pipeline}

@@ -1,59 +1,22 @@
 
 %% ============================================================
 \appendix
-\section{Supplementary: Infrastructure and Pipeline}
+\section{Infrastructure and Pipeline}
 \label{sec:appendix-pipeline}
 %% ============================================================
 
-\newcommand{\cmd}[1]{\colorbox{gray!10}{\texttt{#1}}}
-\newcommand{\field}[1]{\texttt{\textbf{#1}}}
-
 %% ============================================================
-\subsection{Infrastructure and Dependencies}
+\subsection{Infrastructure Choices}
 %% ============================================================
-
-What tools we use for A3 and why each was chosen.
-
-\begin{itemize}[nosep]
-  \item Nanochat fork --- training codebase
-  \item Modal --- GPU compute
-  \item Weights \& Biases --- experiment tracking
-  \item YAML configs --- run specification
-\end{itemize}
-
-\subsubsection{Nanochat Fork --- Training Code}
-
-We fork Karpathy's nanochat (Feb 2026) so that P2 can modify the architecture without touching the original code.
-
-\textbf{URL}: \url{https://github.com/seonghyunban/nanochat}
-
-\paragraph{Branches}
-
-\begin{itemize}[nosep]
-  \item \texttt{master} --- original nanochat, frozen. All baseline runs use this. Do not push here.
-  \item \texttt{p2} --- P2's architecture changes, branched from \texttt{master}.
-\end{itemize}
-
-\paragraph{Tag}
-
-\begin{itemize}[nosep]
-  \item \texttt{baseline-v0} --- immutable snapshot of \texttt{master}. Safety net: even if someone pushes to \texttt{master}, this tag never moves.
-\end{itemize}
-
-\paragraph{How Modal Uses the Fork}
-
-The container clones the fork once at image build and caches it. Before every run, it does \texttt{git fetch} to pull new commits, then checks out the branch/tag the config asks for. No container rebuild needed when P2 pushes new code.
 
 \subsubsection{Modal --- GPU Compute}
 
-A3 needs single-GPU jobs. Modal is the simplest platform for this: write a Python function, pick a GPU, run it. \$500 credits ready via promo code, per-second billing, and Volumes to save checkpoints between runs.
+A3 needs single-GPU training jobs. Modal is the simplest platform for this: write a Python function, pick a GPU, run it. We had \$500 in academic credits, per-second billing, and Volumes (persistent networked disks) to save checkpoints between runs.
 
-\paragraph{Why Not Others}
+\paragraph{Why not others}
+Anyscale (\$1{,}000) is built around Ray for distributed workloads---more setup than needed for single-GPU jobs. AWS (\$500) has the most overhead (EC2, SSH, drivers, storage). Snowflake (\$400 trial) is a data warehouse, not a training platform.
 
-Anyscale (\$1{,}000) is built around Ray for distributed workloads --- more setup than needed for single-GPU jobs, kept as P4 backup. AWS (\$500) has the most overhead for simple jobs (EC2, SSH, drivers, storage). Snowflake (\$400 trial) is a data warehouse, not a training platform.
-
-\paragraph{Which GPU}
-
+\paragraph{GPU selection}
 Nanochat requires BF16, so A10G is the minimum. A100/H100 are faster and often cheaper in total cost due to shorter wall time.
 
 \begin{table}[H]
@@ -67,50 +30,30 @@ P3 (2 training stages + eval) & A100 & 1--3 hrs & \$3--8 \\
 P4 (full nanochat) & H100 & 6--20 hrs & \$24--79 \\
 \bottomrule
 \end{tabular}
+\caption{Estimated GPU time and cost per assignment part.}
 \end{table}
 
 \subsubsection{Weights \& Biases --- Experiment Tracking}
 
-Dashboard for training curves, loss values, and run configs. Already built into nanochat --- no extra code needed.
+Dashboard for training curves, loss values, and run configs. Already built into nanochat---no extra code needed.
 
 \begin{itemize}[nosep]
   \item \textbf{Project}: \texttt{490-autobook-a3} (shared across all parts)
-  \item \textbf{Tags}: each run tagged \texttt{p2}, \texttt{p3}, or \texttt{p4}
-  \item \textbf{Git hash}: every run logs which nanochat commit it used
+  \item \textbf{Namespacing}: each run tagged \texttt{p2}, \texttt{p3}, or \texttt{p4}
+  \item \textbf{Reproducibility}: every run logs which nanochat commit it used
 \end{itemize}
 
 \subsubsection{YAML Configs --- Run Specification}
 
-Each experiment is a YAML file whose fields map directly to nanochat's command-line flags (\texttt{--depth}, \texttt{--max-seq-len}, etc.). No extra config framework needed --- nanochat already parses its own arguments.
-
-\begin{itemize}[nosep]
-  \item \texttt{nanochat\_ref} field picks which branch or tag to run
-  \item Comments in the YAML explain each field --- no separate docs needed
-\end{itemize}
+Each experiment is a YAML file whose fields map directly to nanochat's command-line flags (\texttt{--depth}, \texttt{--max-seq-len}, etc.). The \texttt{nanochat\_ref} field picks which fork branch or tag to run. No extra config framework needed---nanochat already parses its own arguments.
 
 %% ============================================================
-\subsection{Getting Started}
+\subsection{Pipeline Architecture}
 %% ============================================================
 
-One-time setup, how the pipeline works, and the nanochat fork workflow.
+The pipeline reads a YAML config, sends training and evaluation jobs to Modal GPUs, and writes results to a Modal Volume and W\&B. All experiments are controlled via config---no pipeline code changes needed between runs.
 
-\subsubsection{Prerequisites and One-Time Setup}
-
-Three accounts needed: GitHub (you already have this), Modal (\url{https://modal.com}) for GPU compute, and Weights \& Biases (\url{https://wandb.ai}) for experiment tracking. Create your Modal and W\&B accounts, then send your W\&B username to a teammate so they can add you to project \texttt{490-autobook-a3}. Modal gives \$30 free credits on signup; we also have a shared \$500 academic credit pool.
-
-\paragraph{Install W\&B and get your API key}
-
-Run \cmd{pip install wandb}. Find your API key at \url{https://wandb.ai/authorize} --- you will need it in the next step. You also need the local package to fetch training metrics (loss, bpb) for your writeup.
-
-\paragraph{Install Modal CLI and authenticate}
-
-Run \cmd{pip install modal}, then \cmd{modal token new} (opens browser to authenticate). Create a secret so Modal can log to W\&B on your behalf: \cmd{modal secret create wandb-secret WANDB\_API\_KEY=<your-key>}. Verify with \cmd{modal secret list} --- should show \cmd{wandb-secret}.
-
-\subsubsection{How the Pipeline Works}
-
-You write a YAML config. The pipeline reads it, sends training and eval jobs to Modal GPUs, and writes results to a Modal Volume and W\&B. You never need to edit the pipeline code --- everything is controlled via your config.
-
-\paragraph{Files and call graph}
+\subsubsection{Code Structure}
 
 \begin{forest}
   for tree={
@@ -144,259 +87,39 @@ You write a YAML config. The pipeline reads it, sends training and eval jobs to 
   ]
 \end{forest}
 
-\vspace{6pt}
-\begin{center}
-\definecolor{powderblush}{HTML}{E8C4C4}
-\definecolor{parchment}{HTML}{F1E9D2}
-\definecolor{silver}{HTML}{C0C0C0}
-\definecolor{greyolive}{HTML}{A2A38B}
-\definecolor{taupe}{HTML}{8B7E74}
-\definecolor{sunflowergold}{HTML}{FFD700}
-\definecolor{darkteal}{HTML}{005F5F}
-\begin{tikzpicture}[
-  node distance=5mm and 6mm,
-  base/.style={draw=taupe, rounded corners=2pt, minimum height=6mm, font=\small\ttfamily},
-  pyfile/.style={base, fill=powderblush},
-  worker/.style={base, fill=greyolive!30, minimum width=14mm},
-  wbnode/.style={base, fill=sunflowergold!50, minimum width=18mm},
-  volnode/.style={base, fill=darkteal!25, minimum width=18mm},
-  arr/.style={-{Stealth[length=2.5mm]}, thick, color=taupe},
-  dataarr/.style={-{Stealth[length=2mm]}, thick, color=taupe, opacity=0.3},
-  lbl/.style={font=\sffamily\scriptsize\itshape, text=black!60},
-]
-  % === LOCAL ===
-  \node[pyfile] (yaml) {your.yaml};
-  \node[pyfile, right=8mm of yaml] (main) {main.py};
-  \draw[arr] (yaml) -- (main);
-  \node[lbl, above=1pt of main, text=white] {parses YAML};
+\subsubsection{Execution Flow}
 
-  % === MODAL: orchestrator ===
-  \node[pyfile, right=30mm of main, minimum width=16mm] (run) {run.py};
-  \draw[arr] (main) -- node[lbl, above] {.remote()} (run);
-  \node[lbl, above=1pt of run] {orchestrator};
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{pipeline_diagram.png}
+\caption{Pipeline architecture. A YAML config is parsed locally, then dispatched to Modal cloud for training and evaluation. Training stages write checkpoints to a persistent Volume and metrics to W\&B; evaluations read checkpoints from the Volume and write results back.}
+\label{fig:pipeline}
+\end{figure}
 
-  % W&B
-  \node[wbnode, right=60mm of run] (wandb) {W\&B};
-  \node[lbl, below=1pt of wandb] {\scriptsize curves};
-
-  % Setup
-  \node[worker, below=8mm of run] (setup) {setup};
-  \draw[arr] (run) -- (setup);
-  \node[lbl, right=2mm of setup] {tokenizer + data};
-
-  % train.py
-  \node[pyfile, minimum width=20mm, right=4.5mm of setup, yshift=-12mm] (trainpy) {train.py};
-
-  % evaluate.py
-  \node[pyfile, minimum width=20mm, below=22mm of trainpy] (evalpy) {evaluate.py};
-
-  % Spine
-  \draw[color=taupe, thick] (setup.south) -- (setup.south |- evalpy.west);
-  \draw[arr] (setup.south |- trainpy.west) -- (trainpy.west);
-  \draw[arr] (setup.south |- evalpy.west) -- (evalpy.west);
-
-  % Trains
-  \node[worker, right=8mm of trainpy, yshift=8mm] (t1) {train 1};
-  \node[worker, below=2mm of t1] (t2) {train 2};
-  \node[worker, below=2mm of t2] (t3) {train 3};
-  \coordinate (tfork) at ([xshift=4mm]trainpy.east);
-  \draw[color=taupe, thick] (trainpy.east) -- (tfork);
-  \draw[arr] (tfork) |- (t1.west);
-  \draw[arr] (tfork) -- (t2.west);
-  \draw[arr] (tfork) |- (t3.west);
-
-  % Evals
-  \coordinate (eval-anchor) at ([yshift=8mm]evalpy.east);
-  \node[worker, anchor=center] at (t1 |- eval-anchor) (e1) {eval 1};
-  \node[worker, below=2mm of e1] (e2) {eval 2};
-  \node[worker, below=2mm of e2] (e3) {eval 3};
-  \coordinate (efork) at ([xshift=4mm]evalpy.east);
-  \draw[color=taupe, thick] (evalpy.east) -- (efork);
-  \draw[arr] (efork) |- (e1.west);
-  \draw[arr] (efork) -- (e2.west);
-  \draw[arr] (efork) |- (e3.west);
-
-  % Volume
-  \coordinate (mid) at ($(t3.south)!0.5!(e1.north)$);
-  \node[volnode] at (wandb |- mid) (vol) {Volume};
-  \node[lbl, below=1pt of vol] {\scriptsize checkpoints, CSVs};
-
-  % Data arrows
-  \draw[dataarr] (t1.east) to[out=15, in=170] (wandb.west);
-  \draw[dataarr] (t2.east) to[out=10, in=180] (wandb.west);
-  \draw[dataarr] (t3.east) to[out=5, in=190] (wandb.west);
-  \draw[dataarr] (t1.east) to[out=-5, in=150] (vol.west);
-  \draw[dataarr] (t2.east) to[out=-10, in=160] (vol.west);
-  \draw[dataarr] (t3.east) to[out=-15, in=170] (vol.west);
-  \draw[dataarr] (e1.east) to[out=15, in=190] (vol.west);
-  \draw[dataarr] (e2.east) to[out=10, in=200] (vol.west);
-  \draw[dataarr] (e3.east) to[out=5, in=210] (vol.west);
-
-  % Background boxes
-  \begin{scope}[on background layer]
-    \definecolor{localbox}{HTML}{1B1B1B}
-    \node[draw=localbox, rounded corners=4pt, fill=localbox,
-          fit=(yaml)(main),
-          inner sep=5mm, label={[font=\scriptsize\color{parchment!40!black}]above:local}] {};
-  \end{scope}
-  \begin{scope}[on background layer]
-    \node[draw=silver!60!black, dashed, rounded corners=4pt, fill=silver!20,
-          fit=(run)(setup)(trainpy)(t1)(t3)(evalpy)(e1)(e3)(wandb)(vol),
-          inner sep=5mm, label={[xshift=13mm, anchor=south east, font=\scriptsize\color{silver!30!black}]above right:Modal cloud}] {};
-  \end{scope}
-\end{tikzpicture}
-\end{center}
-
-\paragraph{Workflow}
-
-From your perspective, using the pipeline is two steps:
-
-\begin{enumerate}[nosep]
-  \item \textbf{Write a YAML config} describing what to train and what to evaluate. The config specifies your model depth, sequence length, GPU type, W\&B run name, and which evals to run.
-  \item \textbf{Run one command}, passing your config as a parameter:
-\end{enumerate}
+The workflow is two steps: (1)~write a YAML config specifying model depth, sequence length, GPU type, and which evals to run, then (2)~run a single command:
 
 \begin{lstlisting}
-modal run --detach a3/shared/scripts/main.py --config a3/<part>/configs/<your-config>.yaml
+modal run --detach a3/shared/scripts/main.py \
+    --config a3/<part>/configs/<your-config>.yaml
 \end{lstlisting}
 
-That's it. Modal spins up GPU containers, trains your model, runs evals, and writes results to a Modal Volume (checkpoints, CSVs, JSONs) and W\&B (training curves). You can close your laptop --- \texttt{--detach} keeps the pipeline running on Modal. Check progress on the Modal dashboard or W\&B.
+Modal spins up GPU containers, trains the model, runs evals, and writes results to a Modal Volume (checkpoints, CSVs, JSONs) and W\&B (training curves). The \texttt{--detach} flag keeps the pipeline running on Modal independent of the local terminal.
 
 \subsubsection{Nanochat Fork}
 
-Nanochat is an LLM training codebase by Karpathy. We maintain a fork at \url{https://github.com/seonghyunban/nanochat} so that teammates can modify the architecture without touching the original code. The pipeline clones this fork into every Modal container and checks out whichever branch or tag your config specifies.
-
-\paragraph{How to modify vanilla nanochat}
+We maintain a fork of Karpathy's nanochat at \url{https://github.com/seonghyunban/nanochat} so that teammates can modify the architecture without touching the original code. The pipeline integrates the fork as follows:
 
 \begin{enumerate}[nosep]
-  \item Clone the fork: \texttt{git clone https://github.com/seonghyunban/nanochat.git}
-  \item Create a branch: \texttt{git checkout -b p2}
-  \item Make your architecture changes, commit, and push: \texttt{git push origin p2}
+  \item The Modal container image clones the fork once at build time and caches it.
+  \item Before every run, the container does \texttt{git fetch} then checks out whichever branch or tag the YAML config's \texttt{nanochat\_ref} field specifies.
+  \item No container rebuild is needed when new code is pushed---the next run picks it up automatically.
 \end{enumerate}
 
-Never push to \texttt{master} --- it is frozen as the unmodified baseline.
+\paragraph{Branch strategy}
 
-\paragraph{How to use your modified nanochat}
-
-Set \texttt{nanochat\_ref} in your YAML config to your branch name:
-
-\begin{lstlisting}
-nanochat_ref: p2
-\end{lstlisting}
-
-\textbf{Push before you run.} Modal runs \texttt{git fetch} + \texttt{checkout} on the remote fork --- it does not see your local changes. Forgetting to push means Modal silently runs old code.
-
-\paragraph{How to use vanilla nanochat}
-
-Use the immutable baseline tag:
-
-\begin{lstlisting}
-nanochat_ref: baseline-v0
-\end{lstlisting}
-
-This tag points to unmodified nanochat and never moves, even if someone pushes to \texttt{master}.
-
-%% ============================================================
-\subsection{Running, Monitoring \& Troubleshooting}
-%% ============================================================
-
-How to launch a training run, check its progress, collect results, and fix common issues.
-
-\subsubsection{Running}
-
-\begin{lstlisting}
-modal run --detach a3/shared/scripts/main.py --config a3/<part>/configs/<name>.yaml
-\end{lstlisting}
-
-The \cmd{-{}-detach} flag sends the entire pipeline to Modal's cloud so it survives laptop close, Wi-Fi drops, and terminal exit. Without it, output streams to your terminal but the run dies if you disconnect. Always use \cmd{-{}-detach} for real runs; omit it only for quick debugging where you want immediate output.
-
-\subsubsection{Monitoring}
-
-\paragraph{On the website}
-
-\textbf{Modal dashboard} (\url{https://modal.com}): go to your workspace $\to$ \textbf{Apps} $\to$ \cmd{a3-nanochat}. You can see running, completed, and failed function calls. Click any function call and open the \textbf{Logs} tab for live output. The pipeline prints \cmd{[pipeline]}, \cmd{[train]}, and \cmd{[eval]} prefixed lines so you can follow progress.
-
-\textbf{W\&B} (\url{https://wandb.ai}): go to project \cmd{490-autobook-a3} and find your run by the \field{run} name from your YAML config. The \textbf{Charts} tab shows \cmd{train/loss} and \cmd{val/bpb} over steps in real time.
-
-\paragraph{On the terminal}
-
-You can monitor everything without leaving the terminal.
-
-\textbf{Check if your run is still going:}
-
-\begin{lstlisting}
-modal app list
-\end{lstlisting}
-
-\textbf{Stream live logs from a detached run:}
-
-\begin{lstlisting}
-modal app logs <app-id>
-\end{lstlisting}
-
-Reconnects to a running (or recently finished) app and streams its output. The app ID is printed when you launch with \cmd{-{}-detach}.
-
-\textbf{Stop a run:}
-
-\begin{lstlisting}
-modal app stop <app-id>
-\end{lstlisting}
-
-\subsubsection{Results}
-
-\paragraph{On the website}
-
-\textbf{W\&B}: training curves (\cmd{train/loss}, \cmd{val/bpb}) are on the \textbf{Charts} tab. The \textbf{Config} tab shows all training args and \cmd{git\_hash} for reproducibility.
-
-\textbf{Modal Volume}: browse at \url{https://modal.com} $\to$ your workspace $\to$ \textbf{Volumes} $\to$ \cmd{a3-checkpoints}.
-
-\paragraph{On the terminal}
-
-All eval outputs are stored on your Modal Volume (\cmd{a3-checkpoints}).
-
-\textbf{Browse files:}
-
-\begin{lstlisting}
-modal volume ls a3-checkpoints base_checkpoints/         # checkpoints
-modal volume ls a3-checkpoints base_eval/                # CORE CSVs
-modal volume ls a3-checkpoints custom_evals/             # custom eval JSONs
-\end{lstlisting}
-
-\textbf{Download files:}
-
-\begin{lstlisting}
-modal volume get a3-checkpoints base_eval/<file> ./results/
-modal volume get a3-checkpoints custom_evals/<file> ./results/
-\end{lstlisting}
-
-\textbf{Fetch W\&B metrics} (loss, bpb) via Python:
-
-\begin{lstlisting}[language=Python]
-import wandb
-api = wandb.Api()
-run = api.run("<team>/490-autobook-a3/<run-id>")
-df = run.history()       # pandas DataFrame with loss, bpb, etc.
-df.to_csv("metrics.csv")
-\end{lstlisting}
-
-\subsubsection{Troubleshooting}
-
-\paragraph{OOM (out of memory)}
-\textbf{Symptom}: \cmd{CUDA out of memory} in logs.\\
-\textbf{Fix}: halve \field{device\_batch\_size} in your YAML (e.g.\ 512 $\to$ 256 $\to$ 128) and rerun.
-
-\paragraph{Secret not found}
-\textbf{Symptom}: \cmd{Secret 'wandb-secret' not found}.\\
-\textbf{Fix}: run \cmd{modal secret list} and check that the name is exactly \cmd{wandb-secret}. If missing, create it (see Prerequisites above).
-
-\paragraph{Checkpoint not found}
-\textbf{Symptom}: \cmd{No checkpoints found in ...}\\
-\textbf{Fix}: run \cmd{modal volume ls a3-checkpoints base\_checkpoints/} and verify that \field{model\_tag} in your eval config matches a directory that exists.
-
-\paragraph{Git ref not found}
-\textbf{Symptom}: \cmd{error: pathspec '<ref>' did not match ...}\\
-\textbf{Fix}: push your branch to the nanochat fork first. Verify it appears on GitHub before rerunning.
-
-\paragraph{Timeout}
-\textbf{Symptom}: run killed mid-training, Modal dashboard shows timeout.\\
-\textbf{Fix}: increase \field{timeout\_hours} in your YAML config and rerun.
+\begin{itemize}[nosep]
+  \item \texttt{master} --- original nanochat, frozen. All baseline runs use this.
+  \item \texttt{p2} --- P2's architecture modifications (SwiGLU, LayerScale), branched from \texttt{master}.
+  \item \texttt{p3-log-every} --- P3's fork patch adding a \texttt{--log-every} flag for finer W\&B logging.
+  \item \texttt{baseline-v0} --- immutable tag on \texttt{master}. Safety net: even if someone pushes to \texttt{master}, this tag never moves.
+\end{itemize}
